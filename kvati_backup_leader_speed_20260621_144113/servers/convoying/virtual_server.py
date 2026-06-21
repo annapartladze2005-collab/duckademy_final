@@ -40,7 +40,6 @@ convoy_controller = None
 red_line_gate = None
 
 running = False
-leader_speed = 0.140
 stop_event = threading.Event()
 
 # Async detection — keeps the video stream smooth while YOLO runs.
@@ -237,10 +236,6 @@ def start():
     global running
 
     running = True
-
-    if wheels is not None and hasattr(wheels, 'set_leader_speed'):
-        wheels.set_leader_speed(leader_speed)
-
     print("[Convoying] Started")
     return jsonify({'status': 'running'})
 
@@ -266,15 +261,12 @@ def reset():
     global _last_valid_target
     global _last_command
     global _last_red_line_state
-    global leader_speed
 
     running = False
 
     if wheels is not None:
         wheels.set_wheels_speed(0.0, 0.0)
         wheels.reset_game()
-        if hasattr(wheels, 'set_leader_speed'):
-            wheels.set_leader_speed(leader_speed)
 
     if tracker is not None:
         tracker.reset()
@@ -315,14 +307,12 @@ def status():
         'lane_left': _last_lane_left,
         'lane_right': _last_lane_right,
         'red_line': _red_line_to_dict(_last_red_line_state),
-        'leader_speed': leader_speed,
     })
 
 
 @app.route('/update_config', methods=['POST'])
 def update_config():
-    """Tune convoy controller multipliers and simulation leader speed live."""
-    global leader_speed
+    """Tune convoy controller multipliers live from the browser."""
     data = request.json or {}
 
     if convoy_controller is not None:
@@ -341,11 +331,6 @@ def update_config():
         if 'leader_steering_sign' in data:
             convoy_controller.leader_steering_sign = float(data['leader_steering_sign'])
 
-    if 'leader_speed' in data:
-        leader_speed = max(0.0, min(0.25, float(data['leader_speed'])))
-        if wheels is not None and hasattr(wheels, 'set_leader_speed'):
-            wheels.set_leader_speed(leader_speed)
-
     return jsonify({
         'close_multiplier': convoy_controller.close_multiplier if convoy_controller else None,
         'good_multiplier': convoy_controller.good_multiplier if convoy_controller else None,
@@ -353,7 +338,6 @@ def update_config():
         'max_speed': convoy_controller.max_speed if convoy_controller else None,
         'leader_steering_gain': convoy_controller.leader_steering_gain if convoy_controller else None,
         'leader_steering_sign': convoy_controller.leader_steering_sign if convoy_controller else None,
-        'leader_speed': leader_speed,
     })
 
 

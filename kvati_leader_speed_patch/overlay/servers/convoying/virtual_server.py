@@ -40,7 +40,7 @@ convoy_controller = None
 red_line_gate = None
 
 running = False
-leader_speed = 0.140
+leader_speed = 0.055
 stop_event = threading.Event()
 
 # Async detection — keeps the video stream smooth while YOLO runs.

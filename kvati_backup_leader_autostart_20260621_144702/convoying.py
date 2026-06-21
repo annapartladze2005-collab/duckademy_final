@@ -172,10 +172,10 @@ _CONTENT = '''
                 <div class="slider-group">
                     <div class="slider-label">
                         <span>Lead truck speed</span>
-                        <span id="leader-speed-val">0.140</span>
+                        <span id="leader-speed-val">0.055</span>
                     </div>
                     <div class="slider-controls">
-                        <input type="range" class="slider" id="leader-speed-slider" min="0" max="0.22" step="0.005" value="0.140"
+                        <input type="range" class="slider" id="leader-speed-slider" min="0" max="0.18" step="0.005" value="0.055"
                                oninput="document.getElementById('leader-speed-val').textContent=parseFloat(this.value).toFixed(3); sendConfig()">
                     </div>
                 </div>

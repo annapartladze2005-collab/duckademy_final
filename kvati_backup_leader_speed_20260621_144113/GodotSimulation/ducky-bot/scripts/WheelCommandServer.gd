@@ -162,13 +162,7 @@ func _process(_delta: float) -> void:
 			if robot and robot.has_method("reset_game"):
 				robot.reset_game()
 				game_over = false
-				get_tree().call_group("npc_leader", "reset_leader")
-				print("[WheelServer] Game reset by Python + leader reset")
-
-		elif msg_type == "set_leader_speed":
-			var leader_speed := float(d.get("speed", 0.14))
-			get_tree().call_group("npc_leader", "set_speed", leader_speed)
-			print("[WheelServer] Leader speed command: ", leader_speed)
+				print("[WheelServer] Game reset by Python")
 
 		elif msg_type == "remove_objects":
 			var filter_str: String = str(d.get("filter", "")).to_lower()

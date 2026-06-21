@@ -169,16 +169,6 @@ _CONTENT = '''
                                oninput="document.getElementById('far-val').textContent=parseFloat(this.value).toFixed(2); sendConfig()">
                     </div>
                 </div>
-                <div class="slider-group">
-                    <div class="slider-label">
-                        <span>Lead truck speed</span>
-                        <span id="leader-speed-val">0.140</span>
-                    </div>
-                    <div class="slider-controls">
-                        <input type="range" class="slider" id="leader-speed-slider" min="0" max="0.22" step="0.005" value="0.140"
-                               oninput="document.getElementById('leader-speed-val').textContent=parseFloat(this.value).toFixed(3); sendConfig()">
-                    </div>
-                </div>
                 <div id="tune-status" class="status"></div>
             </div>
 
@@ -251,14 +241,6 @@ function updateStatus() {
 
             setBar('bar-final-l', 'val-final-l', cmd ? cmd.left_speed  : 0, laneMax);
             setBar('bar-final-r', 'val-final-r', cmd ? cmd.right_speed : 0, laneMax);
-
-            if (typeof data.leader_speed === 'number') {
-                const slider = document.getElementById('leader-speed-slider');
-                if (document.activeElement !== slider) {
-                    slider.value = data.leader_speed.toFixed(3);
-                    document.getElementById('leader-speed-val').textContent = data.leader_speed.toFixed(3);
-                }
-            }
         })
         .catch(() => {});
 }
@@ -268,7 +250,6 @@ function sendConfig() {
         close_multiplier: parseFloat(document.getElementById('close-slider').value),
         good_multiplier:  parseFloat(document.getElementById('good-slider').value),
         far_multiplier:   parseFloat(document.getElementById('far-slider').value),
-        leader_speed:     parseFloat(document.getElementById('leader-speed-slider').value),
     };
     postJSON('/update_config', data)
         .then(() => showStatus('tune-status', 'Config updated', 'success'))

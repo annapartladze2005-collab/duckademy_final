@@ -162,13 +162,15 @@ func _process(_delta: float) -> void:
 			if robot and robot.has_method("reset_game"):
 				robot.reset_game()
 				game_over = false
+				# No-op in scenes without a leader; in convoying it puts the lead truck
+				# back at the first path point whenever the dashboard reset button is used.
 				get_tree().call_group("npc_leader", "reset_leader")
-				print("[WheelServer] Game reset by Python + leader reset")
+				print("[WheelServer] Game reset by Python")
 
 		elif msg_type == "set_leader_speed":
-			var leader_speed := float(d.get("speed", 0.14))
+			var leader_speed := float(d.get("speed", 0.055))
 			get_tree().call_group("npc_leader", "set_speed", leader_speed)
-			print("[WheelServer] Leader speed command: ", leader_speed)
+			print("[WheelServer] Leader speed set to ", leader_speed)
 
 		elif msg_type == "remove_objects":
 			var filter_str: String = str(d.get("filter", "")).to_lower()
