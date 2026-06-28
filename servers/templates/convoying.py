@@ -46,6 +46,46 @@ _EXTRA_CSS = '''
 .model-status.loading { background: rgba(210,153,34,0.1); border: 1px solid rgba(210,153,34,0.3); color: #d6a63a; }
 
 .reason-text { font-size: 11px; color: var(--text-muted); margin-top: 4px; font-style: italic; }
+
+.key-display {
+    display: grid;
+    grid-template-areas: ". up ." "left down right";
+    gap: 4px;
+    justify-content: center;
+    margin: 8px 0 4px;
+}
+.key-box {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-muted);
+    background: var(--bg-sidebar);
+    transition: background 0.1s, border-color 0.1s, color 0.1s;
+}
+.key-box.active {
+    background: rgba(63,185,80,0.2);
+    border-color: var(--accent-green);
+    color: var(--accent-green);
+}
+.key-up    { grid-area: up; }
+.key-down  { grid-area: down; }
+.key-left  { grid-area: left; }
+.key-right { grid-area: right; }
+.drive-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+.drive-row .button {
+    flex: 1;
+}
+
 '''
 
 _CONTENT = '''
@@ -63,9 +103,23 @@ _CONTENT = '''
                     <span id="run-indicator" style="width:14px;height:14px;border-radius:50%;background:#e74c3c;flex-shrink:0;display:inline-block"></span>
                     <span id="run-label" style="font-size:14px;font-weight:600;color:var(--text-secondary)">STOPPED</span>
                 </div>
-                <button class="button success" onclick="post('/start')">▶ Start</button>
-                <button class="button danger"  onclick="post('/stop')">■ Stop</button>
-                <button class="button"         onclick="post('/reset')">↺ Reset Tracker</button>
+                <div class="drive-row">
+                    <button class="button success" onclick="post('/start')">Start</button>
+                    <button class="button danger"  onclick="post('/stop')">Stop</button>
+                </div>
+                <div class="drive-row">
+                    <button class="button" id="mode-btn" onclick="toggleMode()" style="background:#555">Manual</button>
+                    <button class="button" onclick="post('/reset')" style="background:#444">Reset</button>
+                </div>
+                <div id="key-panel" style="display:none">
+                    <div class="key-display">
+                        <div class="key-box key-up"    id="key-up">&#9650;</div>
+                        <div class="key-box key-left"  id="key-left">&#9664;</div>
+                        <div class="key-box key-down"  id="key-down">&#9660;</div>
+                        <div class="key-box key-right" id="key-right">&#9654;</div>
+                    </div>
+                    <p style="text-align:center;font-size:11px;color:var(--text-muted);margin:4px 0 0">Arrow keys or WASD</p>
+                </div>
                 <div id="ctrl-status" class="status"></div>
             </div>
 
@@ -197,6 +251,113 @@ function post(path) {
         .catch(() => showStatus('ctrl-status', 'Request failed', 'error'));
 }
 
+
+let _manualMode = false;
+const keyState = {up: false, down: false, left: false, right: false};
+const keyMap = {
+    'ArrowUp': 'up', 'w': 'up', 'W': 'up',
+    'ArrowDown': 'down', 's': 'down', 'S': 'down',
+    'ArrowLeft': 'left', 'a': 'left', 'A': 'left',
+    'ArrowRight': 'right', 'd': 'right', 'D': 'right',
+};
+
+function clearLocalKeys() {
+    Object.keys(keyState).forEach(k => keyState[k] = false);
+    updateKeyDisplay();
+}
+
+function updateKeyDisplay() {
+    for (const [key, active] of Object.entries(keyState)) {
+        const el = document.getElementById('key-' + key);
+        if (el) {
+            el.classList.toggle('active', active);
+        }
+    }
+}
+
+function sendKeys() {
+    fetch('/keys', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(keyState)
+    }).catch(() => {});
+}
+
+function setManualUI(enabled) {
+    _manualMode = !!enabled;
+
+    const btn = document.getElementById('mode-btn');
+    const panel = document.getElementById('key-panel');
+
+    if (btn) {
+        btn.textContent = _manualMode ? 'Auto' : 'Manual';
+    }
+
+    if (panel) {
+        panel.style.display = _manualMode ? 'block' : 'none';
+    }
+
+    if (!_manualMode) {
+        clearLocalKeys();
+    }
+}
+
+function toggleMode() {
+    const nextMode = !_manualMode;
+
+    postJSON('/set_mode', {mode: nextMode ? 'manual' : 'auto'})
+        .then(data => {
+            setManualUI(!!data.manual_mode);
+            showStatus('ctrl-status', data.status || (data.manual_mode ? 'manual' : 'auto'), 'success');
+            if (!data.manual_mode) {
+                sendKeys();
+            }
+        })
+        .catch(() => showStatus('ctrl-status', 'Mode switch failed', 'error'));
+}
+
+document.addEventListener('keydown', e => {
+    const dir = keyMap[e.key];
+
+    if (dir && !keyState[dir]) {
+        e.preventDefault();
+        keyState[dir] = true;
+        updateKeyDisplay();
+
+        if (_manualMode) {
+            sendKeys();
+        }
+    }
+});
+
+document.addEventListener('keyup', e => {
+    const dir = keyMap[e.key];
+
+    if (dir && keyState[dir]) {
+        e.preventDefault();
+        keyState[dir] = false;
+        updateKeyDisplay();
+
+        if (_manualMode) {
+            sendKeys();
+        }
+    }
+});
+
+window.addEventListener('blur', () => {
+    clearLocalKeys();
+
+    if (_manualMode) {
+        sendKeys();
+    }
+});
+
+setInterval(() => {
+    if (_manualMode && Object.values(keyState).some(Boolean)) {
+        sendKeys();
+    }
+}, 150);
+
 function setBar(barId, valId, value, maxVal) {
     const pct = Math.min(100, Math.max(0, (value / maxVal) * 100));
     document.getElementById(barId).style.width = pct + '%';
@@ -207,10 +368,14 @@ function updateStatus() {
     fetch('/status')
         .then(r => r.json())
         .then(data => {
-            // Running indicator
+            // Running / mode indicator
             const running = data.running;
+            const manual = !!data.manual_mode;
+            setManualUI(manual);
             document.getElementById('run-indicator').style.background = running ? '#3fb950' : '#e74c3c';
-            document.getElementById('run-label').textContent = running ? 'RUNNING' : 'STOPPED';
+            document.getElementById('run-label').textContent = running
+                ? (manual ? 'RUNNING — MANUAL' : 'RUNNING')
+                : (manual ? 'STOPPED — MANUAL' : 'STOPPED');
 
             // Model
             const modelEl = document.getElementById('model-status');

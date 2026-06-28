@@ -4,6 +4,7 @@ import threading
 import queue
 import socket
 import argparse
+import time
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.join(script_dir, '..', '..')
@@ -41,6 +42,15 @@ red_line_gate = None
 
 running = False
 leader_speed = 0.140
+manual_mode = False
+keys_pressed = {
+    'up': False,
+    'down': False,
+    'left': False,
+    'right': False,
+}
+_keys_lock = threading.Lock()
+_keys_last_update = time.time()
 stop_event = threading.Event()
 
 # Async detection — keeps the video stream smooth while YOLO runs.
@@ -89,6 +99,71 @@ def _detection_loop():
 
         with _detection_lock:
             _last_detections = scaled
+
+
+# ---------------------------------------------------------------------------
+# Manual drive extension
+# ---------------------------------------------------------------------------
+
+def _clear_manual_keys():
+    """Release all manual-drive keys. Used on stop/reset/mode switch."""
+    with _keys_lock:
+        for key in keys_pressed:
+            keys_pressed[key] = False
+
+
+def _manual_drive_speeds(forward_speed, reverse_speed, turn_speed):
+    """Convert current keyboard state to left/right wheel speeds."""
+    global _keys_last_update
+
+    # Safety: if the browser stops sending key updates, stop the robot.
+    if time.time() - _keys_last_update > 0.5:
+        _clear_manual_keys()
+
+    with _keys_lock:
+        keys = keys_pressed.copy()
+
+    left = 0.0
+    right = 0.0
+
+    if keys['up']:
+        left, right = forward_speed, forward_speed
+
+    if keys['down']:
+        left, right = -reverse_speed, -reverse_speed
+
+    if keys['up'] and keys['left']:
+        left, right = forward_speed * 0.45, forward_speed
+    elif keys['up'] and keys['right']:
+        left, right = forward_speed, forward_speed * 0.45
+    elif keys['left']:
+        left, right = -turn_speed, turn_speed
+    elif keys['right']:
+        left, right = turn_speed, -turn_speed
+
+    return left, right
+
+
+def _manual_control_loop(forward_speed, reverse_speed, turn_speed):
+    """Own wheel commands while manual mode is active."""
+    while not stop_event.is_set():
+        if not manual_mode or not running or wheels is None:
+            time.sleep(0.05)
+            continue
+
+        try:
+            game_over = wheels.is_game_over() if hasattr(wheels, 'is_game_over') else False
+            if game_over:
+                wheels.set_wheels_speed(0.0, 0.0)
+            else:
+                left, right = _manual_drive_speeds(forward_speed, reverse_speed, turn_speed)
+                wheels.set_wheels_speed(left, right)
+        except Exception as exc:
+            print(f"[ManualDrive] wheel command failed: {exc}")
+            time.sleep(0.1)
+            continue
+
+        time.sleep(0.05)
 
 
 # ---------------------------------------------------------------------------
@@ -188,7 +263,11 @@ def visualize(frame_rgb):
     # Drive wheels.
     game_over = wheels.is_game_over() if wheels is not None else False
 
-    if running and not game_over:
+    # Manual mode owns the wheels in _manual_control_loop(), so the
+    # autonomous convoy controller must not fight it here.
+    if manual_mode:
+        pass
+    elif wheels is not None and running and not game_over:
         wheels.set_wheels_speed(command.left_speed, command.right_speed)
     else:
         if wheels is not None:
@@ -254,6 +333,8 @@ def stop():
     if wheels is not None:
         wheels.set_wheels_speed(0.0, 0.0)
 
+    _clear_manual_keys()
+
     print("[Convoying] Stopped")
     return jsonify({'status': 'stopped'})
 
@@ -276,6 +357,8 @@ def reset():
         if hasattr(wheels, 'set_leader_speed'):
             wheels.set_leader_speed(leader_speed)
 
+    _clear_manual_keys()
+
     if tracker is not None:
         tracker.reset()
 
@@ -294,6 +377,48 @@ def reset():
     return jsonify({'status': 'reset'})
 
 
+
+@app.route('/set_mode', methods=['POST'])
+def set_mode():
+    """Switch between autonomous convoying and manual keyboard drive."""
+    global manual_mode
+
+    data = request.json or {}
+    mode = data.get('mode', 'auto')
+    manual_mode = mode == 'manual'
+
+    _clear_manual_keys()
+
+    if wheels is not None:
+        wheels.set_wheels_speed(0.0, 0.0)
+
+    current_mode = 'manual' if manual_mode else 'auto'
+    print(f"[Convoying] Mode: {current_mode}")
+
+    return jsonify({
+        'status': current_mode,
+        'mode': current_mode,
+        'manual_mode': manual_mode,
+        'running': running,
+    })
+
+
+@app.route('/keys', methods=['POST'])
+def update_keys():
+    """Receive keyboard state from the dashboard while manual mode is active."""
+    global _keys_last_update
+
+    data = request.json or {}
+
+    with _keys_lock:
+        for key in keys_pressed:
+            keys_pressed[key] = bool(data.get(key, False))
+
+    _keys_last_update = time.time()
+
+    return jsonify({'status': 'ok'})
+
+
 @app.route('/running')
 def get_running():
     return jsonify({'running': running})
@@ -305,6 +430,8 @@ def status():
 
     return jsonify({
         'running': running,
+        'manual_mode': manual_mode,
+        'mode': 'manual' if manual_mode else 'auto',
         'game_over': game_over,
         'model_loaded': bool(getattr(object_agent, 'model_loaded', False)) if object_agent else False,
         'model_load_error': getattr(object_agent, 'load_error', None) if object_agent else None,
@@ -658,6 +785,11 @@ def main():
     print("  Red-line gate ready: lane disabled for 5 seconds after close red line")
 
     threading.Thread(target=_detection_loop, daemon=True).start()
+    threading.Thread(
+        target=_manual_control_loop,
+        args=(0.45, 0.35, 0.25),
+        daemon=True,
+    ).start()
 
     web_port = find_available_port(args.port)
 
